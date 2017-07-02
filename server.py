@@ -1,48 +1,29 @@
-from pprint import pprint
-
 from twisted.python import log
 from twisted.web import http, proxy
-from twisted.web.proxy import ProxyRequest
 
 
 class ProxyClient(proxy.ProxyClient):
-    """Mangle returned header, content here.
-
-    Use `self.father` methods to modify request directly.
-    """
-
     def handleHeader(self, key, value):
-        # change response header here
-        if key == "Access-Control-Allow-Origin":
-            value = "*"
-        log.msg("Header: %s: %s" % (key, value))
+        """
+        This method modify headers. Check if header "Access-Control-Allow-Origin" exists and add/modify it
+        """
+        if not self.father.responseHeaders.hasHeader(b"access-control-allow-origin"):
+            self.father.responseHeaders.addRawHeader(b"access-control-allow-origin", b"*")
+        elif key == b"access-control-allow-origin" and value != b"*":
+            value = b"*"
         proxy.ProxyClient.handleHeader(self, key, value)
-
-    def handleResponsePart(self, buffer):
-        # change response part here
-        log.msg("Content: %s" % (buffer[:50],))
-        # make all content upper case
-        proxy.ProxyClient.handleResponsePart(self, buffer.upper())
 
 
 class ProxyClientFactory(proxy.ProxyClientFactory):
     protocol = ProxyClient
 
 
-
-class ChangeSomeHeadersProxyRequest(ProxyRequest):
-    def process(self):
-        self.changeHeaders()
-        return ProxyRequest.process(self)
-
-    def changeHeaders(self):
-        # Inject an extra request header.
-        if not self.requestHeaders.hasHeader(b"access-control-allow-origin"):
-            self.requestHeaders.addRawHeader(b"access-control-allow-origin", b"*")
+class ProxyRequest(proxy.ProxyRequest):
+    protocols = dict(http=ProxyClientFactory)
 
 
 class Proxy(proxy.Proxy):
-    requestFactory = ChangeSomeHeadersProxyRequest
+    requestFactory = ProxyRequest
 
 
 class ProxyFactory(http.HTTPFactory):
@@ -70,7 +51,7 @@ if __name__ == '__main__':
     d = endpoint.listen(ProxyFactory())
     d.addErrback(shutdown, reactor)
     reactor.run()
-else:  # $ twistd -ny proxy_modify_request.py
+else:  # $ twistd -ny server.py
     from twisted.application import service, strports
 
     application = service.Application("proxy_modify_request")
